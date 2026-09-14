@@ -1,0 +1,417 @@
+[
+  {
+    "handle": "Cented7",
+    "name": "Cented",
+    "category": "trader",
+    "weight": 1.2,
+    "wallet": "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",
+    "tier": "A",
+    "note": "high-PnL, high-noise nano-cap radar"
+  },
+  {
+    "handle": "notdecu",
+    "name": "Decu",
+    "category": "trader",
+    "weight": 1.35,
+    "wallet": "4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9",
+    "tier": "A",
+    "note": "strong recent PnL/win-rate; high activity"
+  },
+  {
+    "handle": "theonomix",
+    "name": "Theo",
+    "category": "trader",
+    "weight": 1.15,
+    "wallet": "Bi4rd5FH5bYEN8scZ7wevxNZyNmKHdaBcvewdPFxYdLt",
+    "tier": "A",
+    "note": "high-volume early radar"
+  },
+  {
+    "handle": "blknoiz06",
+    "name": "Ansem",
+    "category": "kol",
+    "weight": 1.25,
+    "wallet": "AVAZvHLR2PcWpDf8BXY4rVxNHYRBytycHkcB5z5QNXYm",
+    "tier": "A",
+    "note": "high mindshare; wallet confirmation required"
+  },
+  {
+    "handle": "radiancebrr",
+    "name": "Radiance",
+    "category": "trader",
+    "weight": 1.2,
+    "wallet": "FAicXNV5FVqtfbpn4Zccs71XcfGeyxBSGbqLDyDJZjke",
+    "tier": "A"
+  },
+  {
+    "handle": "Ga__ke",
+    "name": "Gake",
+    "category": "trader",
+    "weight": 1.1,
+    "wallet": "DNfuF1L62WWyW3pNakVkyGGFzVVhj4Yr52jSmdTyeBHm",
+    "tier": "A"
+  },
+  {
+    "handle": "CookerFlips",
+    "name": "Cooker",
+    "category": "trader",
+    "weight": 0.9,
+    "wallet": "8deJ9xeUvXSJwicYptA9mHsU2rN2pDx37KWzkDkEXhU6",
+    "tier": "B",
+    "note": "high mindshare but current PnL can diverge; confirmation only"
+  },
+  {
+    "handle": "kadenox",
+    "name": "Kadenox",
+    "category": "trader",
+    "weight": 1.25,
+    "wallet": "B32QbbdDAyhvUQzjcaM5j6ZVKwjCxAwGH5Xgvb9SJqnC",
+    "tier": "A"
+  },
+  {
+    "handle": "clukzSOL",
+    "name": "Clukz",
+    "category": "trader",
+    "weight": 1.05,
+    "wallet": "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
+    "tier": "B"
+  },
+  {
+    "handle": "trunoest",
+    "name": "Trunoest",
+    "category": "trader",
+    "weight": 1.45,
+    "wallet": "ardinRsN1mNYVeoJWTBsWeYeXvuR9UUDGMsCDKpb6AT",
+    "tier": "A",
+    "note": "very strong current 7D/30D PnL; still high-noise"
+  },
+  {
+    "handle": "cap100x",
+    "name": "Cap",
+    "category": "trader",
+    "weight": 1.15,
+    "wallet": "CAPn1yH4oSywsxGU456jfgTrSSUidf9jgeAnHceNUJdw",
+    "tier": "A"
+  },
+  {
+    "handle": "nyhrox",
+    "name": "Nyhrox",
+    "category": "trader",
+    "weight": 1.15,
+    "wallet": "6S8GezkxYUfZy9JPtYnanbcZTMB87Wjt1qx3c6ELajKC",
+    "tier": "A"
+  },
+  {
+    "handle": "XScharo",
+    "name": "Scharo",
+    "category": "trader",
+    "weight": 0.95,
+    "wallet": "4sAUSQFdvWRBxR8UoLBYbw8CcXuwXWxnN8pXa4mtm5nU",
+    "tier": "B"
+  },
+  {
+    "handle": "cottagepvp",
+    "name": "Cottage",
+    "category": "trader",
+    "weight": 1.15,
+    "wallet": "4UwK5AE6Djdf3MfwtPGE8pFYD47MhU9fiStDVmSHJVMB",
+    "tier": "A"
+  },
+  {
+    "handle": "goyimpnl",
+    "name": "GoyimPnL",
+    "category": "trader",
+    "weight": 0.95,
+    "tier": "B",
+    "note": "useful for launch/bundling behavior; not automatic bullish signal"
+  },
+  {
+    "handle": "boogiepnl",
+    "name": "Boogie",
+    "category": "trader",
+    "weight": 0.95,
+    "wallet": "kai5bkDZS9jvapW5bWopzKDHJVagamTxZbAn4u4r5Ya",
+    "tier": "B"
+  },
+  {
+    "handle": "s1mple_s1mple",
+    "name": "s1mple",
+    "category": "kol",
+    "weight": 0.85,
+    "tier": "B"
+  },
+  {
+    "handle": "nftkeano",
+    "name": "Keano",
+    "category": "kol",
+    "weight": 0.85,
+    "tier": "B"
+  },
+  {
+    "handle": "SolanaDali",
+    "name": "SolanaDali",
+    "category": "kol",
+    "weight": 0.8,
+    "tier": "B"
+  },
+  {
+    "handle": "TeddyxROO",
+    "name": "Teddy",
+    "category": "kol",
+    "weight": 0.75,
+    "tier": "B"
+  },
+  {
+    "handle": "ieatjeets",
+    "name": "ieatjeets",
+    "category": "analysis",
+    "weight": 0.95,
+    "tier": "A",
+    "note": "on-chain/narrative analysis; mentions are contextual rather than direct calls"
+  },
+  {
+    "handle": "Pumpfun",
+    "name": "Pump.fun",
+    "category": "ecosystem_dev",
+    "weight": 1.2,
+    "tier": "A"
+  },
+  {
+    "handle": "a1lon9",
+    "name": "Alon",
+    "category": "ecosystem_dev",
+    "weight": 1.1,
+    "tier": "A"
+  },
+  {
+    "handle": "solana",
+    "name": "Solana",
+    "category": "ecosystem_dev",
+    "weight": 1.15,
+    "tier": "A"
+  },
+  {
+    "handle": "aeyakovenko",
+    "name": "Anatoly Yakovenko",
+    "category": "ecosystem_dev",
+    "weight": 1.2,
+    "tier": "A",
+    "note": "attention catalyst; not treated as fundamental endorsement"
+  },
+  {
+    "handle": "JupiterExchange",
+    "name": "Jupiter",
+    "category": "ecosystem_dev",
+    "weight": 1.1,
+    "tier": "A"
+  },
+  {
+    "handle": "weremeow",
+    "name": "Meow",
+    "category": "ecosystem_dev",
+    "weight": 1.05,
+    "tier": "A"
+  },
+  {
+    "handle": "phantom",
+    "name": "Phantom",
+    "category": "ecosystem_dev",
+    "weight": 1.05,
+    "tier": "A"
+  },
+  {
+    "handle": "RaydiumProtocol",
+    "name": "Raydium",
+    "category": "ecosystem_dev",
+    "weight": 0.95,
+    "tier": "B"
+  },
+  {
+    "handle": "MeteoraAG",
+    "name": "Meteora",
+    "category": "ecosystem_dev",
+    "weight": 0.95,
+    "tier": "B"
+  },
+  {
+    "handle": "binance",
+    "name": "Binance",
+    "category": "exchange",
+    "weight": 1.3,
+    "tier": "A"
+  },
+  {
+    "handle": "CoinbaseAssets",
+    "name": "Coinbase Assets",
+    "category": "exchange",
+    "weight": 1.3,
+    "tier": "A"
+  },
+  {
+    "handle": "CoinbaseExch",
+    "name": "Coinbase Exchange",
+    "category": "exchange",
+    "weight": 1.2,
+    "tier": "A"
+  },
+  {
+    "handle": "Coinbase",
+    "name": "Coinbase",
+    "category": "exchange",
+    "weight": 1.1,
+    "tier": "A"
+  },
+  {
+    "handle": "OKX",
+    "name": "OKX",
+    "category": "exchange",
+    "weight": 1.05,
+    "tier": "A"
+  },
+  {
+    "handle": "Bybit_Official",
+    "name": "Bybit",
+    "category": "exchange",
+    "weight": 1.0,
+    "tier": "B"
+  },
+  {
+    "handle": "MEXC_Official",
+    "name": "MEXC",
+    "category": "exchange",
+    "weight": 1.0,
+    "tier": "B"
+  },
+  {
+    "handle": "gate_io",
+    "name": "Gate",
+    "category": "exchange",
+    "weight": 0.95,
+    "tier": "B"
+  },
+  {
+    "handle": "kucoincom",
+    "name": "KuCoin",
+    "category": "exchange",
+    "weight": 0.95,
+    "tier": "B"
+  },
+  {
+    "handle": "krakenfx",
+    "name": "Kraken",
+    "category": "exchange",
+    "weight": 1.0,
+    "tier": "B"
+  },
+  {
+    "handle": "bitgetglobal",
+    "name": "Bitget",
+    "category": "exchange",
+    "weight": 0.95,
+    "tier": "B"
+  },
+  {
+    "handle": "SolanaFloor",
+    "name": "SolanaFloor",
+    "category": "attention",
+    "weight": 0.95,
+    "tier": "A"
+  },
+  {
+    "handle": "WatcherGuru",
+    "name": "Watcher.Guru",
+    "category": "attention",
+    "weight": 0.85,
+    "tier": "A"
+  },
+  {
+    "handle": "arkham",
+    "name": "Arkham",
+    "category": "attention",
+    "weight": 0.95,
+    "tier": "A"
+  },
+  {
+    "handle": "lookonchain",
+    "name": "Lookonchain",
+    "category": "attention",
+    "weight": 1.0,
+    "tier": "A"
+  },
+  {
+    "handle": "OnchainLens",
+    "name": "Onchain Lens",
+    "category": "attention",
+    "weight": 0.9,
+    "tier": "A"
+  },
+  {
+    "handle": "bubblemaps",
+    "name": "Bubblemaps",
+    "category": "risk",
+    "weight": 1.2,
+    "tier": "A"
+  },
+  {
+    "handle": "Deebs_DeFi",
+    "name": "Deebs",
+    "category": "risk",
+    "weight": 1.05,
+    "tier": "A"
+  },
+  {
+    "handle": "WuBlockchain",
+    "name": "Wu Blockchain",
+    "category": "attention",
+    "weight": 0.85,
+    "tier": "A"
+  },
+  {
+    "handle": "tier10k",
+    "name": "DB",
+    "category": "attention",
+    "weight": 0.8,
+    "tier": "B"
+  },
+  {
+    "handle": "DegenerateNews",
+    "name": "Degenerate News",
+    "category": "attention",
+    "weight": 0.75,
+    "tier": "B"
+  },
+  {
+    "handle": "Stalkchain",
+    "name": "Stalkchain",
+    "category": "attention",
+    "weight": 0.85,
+    "tier": "B"
+  },
+  {
+    "handle": "Cupseyy",
+    "name": "Cupsey",
+    "category": "trader",
+    "weight": 1.35,
+    "wallet": "2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f",
+    "tier": "A",
+    "note": "famous high-volume Solana memecoin trader; wallet signal is high-noise and requires confirmation"
+  },
+  {
+    "handle": "MustStopMurad",
+    "name": "Murad",
+    "category": "kol",
+    "weight": 1.2,
+    "wallet": null,
+    "tier": "A",
+    "note": "major memecoin thesis/mindshare account; attention catalyst, not auto-buy"
+  },
+  {
+    "handle": "frankdegods",
+    "name": "Frank DeGods",
+    "category": "kol",
+    "weight": 1.0,
+    "wallet": null,
+    "tier": "B",
+    "note": "Solana consumer-crypto/meme-culture commentator; no wallet mapping assumed"
+  }
+]

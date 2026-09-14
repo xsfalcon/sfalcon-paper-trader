@@ -12,14 +12,21 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from wallet_monitor import WalletMonitor
+from lore_monitor import LoreMonitor
+from social_monitor import SocialMonitor
+from exchange_monitor import ExchangeMonitor
+from research_gate import ResearchGate, volatility_signal, postbond_signal
 
 load_dotenv()
 
-VERSION = "3.0.0"
+VERSION = "4.0.0"
 STARTING_EQUITY = float(os.getenv("STARTING_EQUITY_USD", "1000"))
 SCAN_INTERVAL = float(os.getenv("SCAN_INTERVAL_SECONDS", "60"))
 POSITION_CHECK = float(os.getenv("POSITION_CHECK_SECONDS", "5"))
 WALLET_CHECK = float(os.getenv("WALLET_CHECK_SECONDS", "5"))
+LORE_CHECK = float(os.getenv("LORE_CHECK_SECONDS", "15"))
+SOCIAL_CHECK = float(os.getenv("SOCIAL_CHECK_SECONDS", "15"))
+EXCHANGE_CHECK = float(os.getenv("EXCHANGE_CHECK_SECONDS", "60"))
 MAX_SINGLE_PCT = float(os.getenv("MAX_SINGLE_POSITION_PCT", "0.25"))
 MAX_TOTAL_PCT = float(os.getenv("MAX_TOTAL_EXPOSURE_PCT", "0.50"))
 MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", "3"))
@@ -282,7 +289,7 @@ class Sources:
                     ordered.append(mint)
         self.health["last_discovery_at"] = datetime.now(timezone.utc).isoformat()
         self.health["last_discovery_count"] = len(ordered)
-        return ordered[:55]
+        return ordered[:80]
 
     async def candidate(self, address):
         try:
@@ -492,19 +499,20 @@ async def set_cash(v):
         await db.commit()
 
 class Engine:
-    def __init__(self, src, wallets):
+    def __init__(self, src, wallets, lore, social, exchange, research):
         self.src = src
         self.wallets = wallets
+        self.lore = lore
+        self.social = social
+        self.exchange = exchange
+        self.research = research
         self.last_candidates = {}
+        self.social_research_per_scan = int(os.getenv("SOCIAL_RESEARCH_PER_SCAN", "3"))
 
     async def positions(self, open_only=True):
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            q = (
-                "SELECT * FROM positions WHERE status='OPEN'"
-                if open_only
-                else "SELECT * FROM positions ORDER BY id DESC"
-            )
+            q = "SELECT * FROM positions WHERE status='OPEN'" if open_only else "SELECT * FROM positions ORDER BY id DESC"
             cur = await db.execute(q)
             return [dict(r) for r in await cur.fetchall()]
 
@@ -516,337 +524,298 @@ class Engine:
                 eq += p["remaining_qty"] * c.price_usd
         return eq
 
-    async def discover_once(self):
-        wallet_mints = await self.wallets.recent_bought_mints(minutes=75, limit=40)
-        addrs = await self.src.discover(wallet_mints=wallet_mints)
+    async def _initial_signals(self, c, wallet_mints, lore_mints, social_mints):
+        score_candidate(c)
+        wallet = await self.wallets.signal_for_mint(c.address)
+        c.score = max(0, min(100, c.score + float(wallet.get("score_delta") or 0)))
 
-        # DEX lookups are rate-limited inside Sources.candidate, so modest concurrency is safe.
+        lore = await self.lore.signal_for_mint(c.address)
+        lore_delta = float(lore.get("score_delta") or 0) if lore.get("available") else 0.0
+        c.score = max(0, min(100, c.score + lore_delta))
+
+        postbond = postbond_signal(c, lore)
+        c.score = max(0, min(100, c.score + float(postbond.get("score_delta") or 0)))
+
+        volatility = volatility_signal(c)
+        c.score = max(0, min(100, c.score + float(volatility.get("score_delta") or 0)))
+
+        exchange = await self.exchange.signal_for_candidate(c.symbol, c.name, c.price_change_m5)
+        c.score = max(0, min(100, c.score + float(exchange.get("score_delta") or 0)))
+
+        social = await self.social.signal_for_candidate(
+            c.address, c.symbol, c.name, wallet_signal=wallet, price_change_m5=c.price_change_m5
+        )
+        c.score = max(0, min(100, c.score + float(social.get("score_delta") or 0)))
+
+        if c.address in wallet_mints and "tracked_wallet" not in c.source_tags:
+            c.source_tags.append("tracked_wallet")
+        if c.address in lore_mints and "bond_lore" not in c.source_tags:
+            c.source_tags.append("bond_lore")
+        if c.address in social_mints and "crypto_twitter" not in c.source_tags:
+            c.source_tags.append("crypto_twitter")
+        if postbond.get("available") and "postbond" not in c.source_tags:
+            c.source_tags.append("postbond")
+        if volatility.get("triggered") and "volatility_radar" not in c.source_tags:
+            c.source_tags.append("volatility_radar")
+
+        signals = {
+            "wallet": wallet,
+            "lore": lore,
+            "postbond": postbond,
+            "volatility": volatility,
+            "exchange": exchange,
+            "social": social,
+        }
+        c.score_breakdown.update({
+            "wallet_signal": wallet,
+            "prebond_lore": lore,
+            "postbond_signal": postbond,
+            "volatility_signal": volatility,
+            "exchange_signal": exchange,
+            "social_signal": social,
+            "source_tags": c.source_tags,
+        })
+        return signals
+
+    def _needs_deep_research(self, c, signals):
+        return (
+            c.score >= 65
+            or abs(float(signals["wallet"].get("score_delta") or 0)) >= 5
+            or float(signals["lore"].get("score_delta") or 0) >= 4
+            or bool(signals["postbond"].get("available"))
+            or bool(signals["volatility"].get("triggered"))
+            or float(signals["exchange"].get("score_delta") or 0) >= 3
+            or int(signals["social"].get("mentions") or 0) >= 2
+        )
+
+    async def discover_once(self):
+        wallet_mints = await self.wallets.recent_bought_mints(minutes=75, limit=45)
+        lore_mints = await self.lore.priority_mints(limit=55)
+        social_mints = await self.social.recent_mints(minutes=90, limit=35)
+        priority_mints, seen_priority = [], set()
+        for mint in list(wallet_mints) + list(lore_mints) + list(social_mints):
+            if mint and mint not in seen_priority:
+                seen_priority.add(mint); priority_mints.append(mint)
+        addrs = await self.src.discover(wallet_mints=priority_mints)
+
         sem = asyncio.Semaphore(4)
         async def load(a):
             async with sem:
                 return await self.src.candidate(a)
-
         cs = [x for x in await asyncio.gather(*(load(a) for a in addrs)) if x]
         cs.sort(key=lambda c: (c.volume_m5, c.liquidity_usd), reverse=True)
 
-        # Enrich the most relevant candidates. Jupiter free tier is capped at 1 RPS.
-        for c in cs[:12]:
+        # Jupiter enrichment is deliberately limited because the free tier is roughly 1 RPS.
+        for c in cs[:14]:
             await self.src.enrich_jupiter(c)
 
-        scored = []
+        signals_by_mint = {}
         for c in cs:
-            score_candidate(c)
-            signal = await self.wallets.signal_for_mint(c.address)
-            c.score = max(0, min(100, c.score + float(signal["score_delta"])))
-            c.score_breakdown["wallet_signal"] = signal
-            if c.address in wallet_mints and "tracked_wallet" not in c.source_tags:
-                c.source_tags.append("tracked_wallet")
-                c.score_breakdown["source_tags"] = c.source_tags
-            scored.append(c)
+            signals_by_mint[c.address] = await self._initial_signals(c, wallet_mints, lore_mints, social_mints)
 
-        cs = sorted(scored, key=lambda c: c.score, reverse=True)
-        self.last_candidates = {c.address: c for c in cs[:50]}
+        # Broad free-CT searches are the expensive/noisiest free operation. Research only the best few
+        # candidates per discovery cycle, then recompute the social component from the new evidence.
+        deep = [c for c in cs if self._needs_deep_research(c, signals_by_mint[c.address])]
+        deep.sort(key=lambda c: c.score, reverse=True)
+        for c in deep[: self.social_research_per_scan]:
+            sigs = signals_by_mint[c.address]
+            old_social = float(sigs["social"].get("score_delta") or 0)
+            await self.social.research_candidate(c.address, c.symbol, c.name)
+            social = await self.social.signal_for_candidate(
+                c.address, c.symbol, c.name, wallet_signal=sigs["wallet"], price_change_m5=c.price_change_m5
+            )
+            c.score = max(0, min(100, c.score - old_social + float(social.get("score_delta") or 0)))
+            sigs["social"] = social
+            c.score_breakdown["social_signal"] = social
+            if social.get("mentions") and "crypto_twitter_researched" not in c.source_tags:
+                c.source_tags.append("crypto_twitter_researched")
+
+        # Research gate is mandatory before any entry. Radar events are informational even when rejected.
+        research_results = {}
+        for c in cs:
+            sigs = signals_by_mint[c.address]
+            result = self.research.evaluate(c, sigs, ENTRY_SCORE_MIN, MIN_LIQ, MIN_VOL5)
+            research_results[c.address] = result
+            c.score_breakdown["research_gate"] = result
+            c.score_breakdown["source_tags"] = c.source_tags
+            await self.research.record(c, result, sigs)
+            if sigs["volatility"].get("triggered"):
+                await self.research.record_radar(c, "volatility", abs(float(sigs["volatility"].get("score_delta") or 0)), sigs["volatility"])
+
+        cs = sorted(cs, key=lambda c: c.score, reverse=True)
+        self.last_candidates = {c.address: c for c in cs[:75]}
 
         async with aiosqlite.connect(DB_PATH) as db:
-            for c in cs[:50]:
+            for c in cs[:75]:
+                social = signals_by_mint[c.address]["social"]
                 await db.execute(
-                    """INSERT INTO candidates(
-                        address,symbol,score,price,liquidity,market_cap,volume_m5,
-                        buys_m5,sells_m5,social_mentions,social_engagement,breakdown,observed_at
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    ON CONFLICT(address) DO UPDATE SET
+                    """INSERT INTO candidates(address,symbol,score,price,liquidity,market_cap,volume_m5,
+                        buys_m5,sells_m5,social_mentions,social_engagement,breakdown,observed_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(address) DO UPDATE SET
                         symbol=excluded.symbol,score=excluded.score,price=excluded.price,
                         liquidity=excluded.liquidity,market_cap=excluded.market_cap,
                         volume_m5=excluded.volume_m5,buys_m5=excluded.buys_m5,
-                        sells_m5=excluded.sells_m5,breakdown=excluded.breakdown,
+                        sells_m5=excluded.sells_m5,social_mentions=excluded.social_mentions,
+                        social_engagement=excluded.social_engagement,breakdown=excluded.breakdown,
                         observed_at=excluded.observed_at""",
-                    (
-                        c.address,
-                        c.symbol,
-                        c.score,
-                        c.price_usd,
-                        c.liquidity_usd,
-                        c.market_cap,
-                        c.volume_m5,
-                        c.buys_m5,
-                        c.sells_m5,
-                        0,
-                        0,
-                        json.dumps(c.score_breakdown),
-                        c.observed_at.isoformat(),
-                    ),
+                    (c.address,c.symbol,c.score,c.price_usd,c.liquidity_usd,c.market_cap,c.volume_m5,
+                     c.buys_m5,c.sells_m5,int(social.get("mentions") or 0),
+                     int(social.get("independent_positive_accounts") or 0),json.dumps(c.score_breakdown),c.observed_at.isoformat()),
                 )
             await db.commit()
 
         for c in cs:
-            if c.score >= ENTRY_SCORE_MIN:
+            if research_results[c.address]["verdict"] == "QUALIFIED" and c.score >= ENTRY_SCORE_MIN:
                 await self.maybe_enter(c)
 
     async def maybe_enter(self, c):
         ps = await self.positions()
-        if len(ps) >= MAX_OPEN_POSITIONS or any(p["address"] == c.address for p in ps):
-            return
-        eq = await self.equity()
-        ca = await cash()
+        if len(ps) >= MAX_OPEN_POSITIONS or any(p["address"] == c.address for p in ps): return
+        eq, ca = await self.equity(), await cash()
         exposure = sum(p["remaining_qty"] * p["entry_price"] for p in ps)
         room = max(0, eq * MAX_TOTAL_PCT - exposure)
         size = min(ca, eq * min(size_pct(c.score), MAX_SINGLE_PCT), room)
-        if size < 20:
-            return
+        if size < 20: return
         fill, slip, fee = buy_fill(c.price_usd, size, c.liquidity_usd)
-        if slip > MAX_SLIP:
-            return
+        if slip > MAX_SLIP: return
         qty = max(0, size - fee) / fill
-        if qty <= 0:
-            return
-
+        if qty <= 0: return
         now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute(
-                """INSERT INTO positions(
-                    address,symbol,entry_price,size_usd,token_qty,remaining_qty,
-                    stop_price,high_price,score,opened_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    c.address,
-                    c.symbol,
-                    fill,
-                    size,
-                    qty,
-                    qty,
-                    fill * 0.80,
-                    fill,
-                    c.score,
-                    now,
-                ),
-            )
-            pid = cur.lastrowid
-            await db.execute(
-                """INSERT INTO fills(
-                    position_id,side,price,qty,gross_usd,fee_usd,
-                    slippage_pct,reason,ts
-                ) VALUES(?,?,?,?,?,?,?,?,?)""",
-                (pid, "BUY", fill, qty, size, fee, slip, "ENTRY", now),
-            )
+            cur = await db.execute("""INSERT INTO positions(address,symbol,entry_price,size_usd,token_qty,remaining_qty,
+                stop_price,high_price,score,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (c.address,c.symbol,fill,size,qty,qty,fill*.80,fill,c.score,now))
+            pid=cur.lastrowid
+            await db.execute("""INSERT INTO fills(position_id,side,price,qty,gross_usd,fee_usd,slippage_pct,reason,ts)
+                VALUES(?,?,?,?,?,?,?,?,?)""",(pid,"BUY",fill,qty,size,fee,slip,"ENTRY_RESEARCH_QUALIFIED",now))
             await db.commit()
-        await set_cash(ca - size)
-        print(
-            f"[ENTRY] {c.symbol} score={c.score:.1f} "
-            f"size=${size:.2f} fill={fill:.10g} slip={slip*100:.2f}%"
-        )
+        await set_cash(ca-size)
+        print(f"[ENTRY] {c.symbol} score={c.score:.1f} size=${size:.2f} fill={fill:.10g} slip={slip*100:.2f}%")
 
     async def manage_once(self):
         for p in await self.positions():
             c = await self.src.candidate(p["address"])
-            if not c or c.price_usd <= 0:
-                continue
-            price = c.price_usd
-            high = max(p["high_price"], price)
+            if not c or c.price_usd <= 0: continue
+            price, high = c.price_usd, max(p["high_price"], c.price_usd)
             async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE positions SET high_price=? WHERE id=?",
-                    (high, p["id"]),
-                )
-                await db.commit()
-
+                await db.execute("UPDATE positions SET high_price=? WHERE id=?",(high,p["id"])); await db.commit()
             if price <= p["stop_price"]:
-                await self.sell(p, c, p["remaining_qty"], "STOP")
-                continue
+                await self.sell(p,c,p["remaining_qty"],"STOP"); continue
+            wallet = await self.wallets.signal_for_mint(p["address"], minutes=20)
+            if wallet["score_delta"] <= -8 and wallet["distributing_wallets"] >= 2:
+                await self.sell(p,c,p["remaining_qty"],"WALLET_DISTRIBUTION"); continue
+            social = await self.social.signal_for_candidate(p["address"],p["symbol"],None,wallet_signal=wallet,price_change_m5=c.price_change_m5)
+            if social.get("score_delta",0) <= -8 and wallet.get("distributing_wallets",0) >= 1:
+                await self.sell(p,c,p["remaining_qty"],"SOCIAL_AND_WALLET_RISK"); continue
+            if not p["tp1_done"] and price >= p["entry_price"]*1.25:
+                await self.sell(p,c,min(p["remaining_qty"],p["token_qty"]*.25),"TP1"); await self.flag(p["id"],"tp1_done"); continue
+            if not p["tp2_done"] and price >= p["entry_price"]*1.50:
+                await self.sell(p,c,min(p["remaining_qty"],p["token_qty"]*.25),"TP2"); await self.flag(p["id"],"tp2_done"); continue
+            if high >= p["entry_price"]*1.25 and price <= high*.80:
+                await self.sell(p,c,p["remaining_qty"],"TRAIL")
 
-            signal = await self.wallets.signal_for_mint(p["address"], minutes=20)
-            if signal["score_delta"] <= -8 and signal["distributing_wallets"] >= 2:
-                await self.sell(p, c, p["remaining_qty"], "WALLET_DISTRIBUTION")
-                continue
-
-            if not p["tp1_done"] and price >= p["entry_price"] * 1.25:
-                await self.sell(
-                    p,
-                    c,
-                    min(p["remaining_qty"], p["token_qty"] * 0.25),
-                    "TP1",
-                )
-                await self.flag(p["id"], "tp1_done")
-                continue
-
-            if not p["tp2_done"] and price >= p["entry_price"] * 1.50:
-                await self.sell(
-                    p,
-                    c,
-                    min(p["remaining_qty"], p["token_qty"] * 0.25),
-                    "TP2",
-                )
-                await self.flag(p["id"], "tp2_done")
-                continue
-
-            if high >= p["entry_price"] * 1.25 and price <= high * 0.80:
-                await self.sell(p, c, p["remaining_qty"], "TRAIL")
-
-    async def flag(self, pid, field):
-        if field not in {"tp1_done", "tp2_done"}:
-            return
+    async def flag(self,pid,field):
+        if field not in {"tp1_done","tp2_done"}: return
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(f"UPDATE positions SET {field}=1 WHERE id=?", (pid,))
-            await db.commit()
+            await db.execute(f"UPDATE positions SET {field}=1 WHERE id=?",(pid,)); await db.commit()
 
-    async def sell(self, p, c, qty, reason):
-        if qty <= 0:
-            return
-        market = qty * c.price_usd
-        fill, slip, fee = sell_fill(c.price_usd, market, c.liquidity_usd)
-        proceeds = qty * fill - fee
-        pnl = proceeds - qty * p["entry_price"]
-        now = datetime.now(timezone.utc).isoformat()
-        ca = await cash()
-
+    async def sell(self,p,c,qty,reason):
+        if qty<=0:return
+        market=qty*c.price_usd; fill,slip,fee=sell_fill(c.price_usd,market,c.liquidity_usd)
+        proceeds=qty*fill-fee; pnl=proceeds-qty*p["entry_price"]; now=datetime.now(timezone.utc).isoformat(); ca=await cash()
         async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute(
-                "SELECT remaining_qty,realized_pnl FROM positions WHERE id=?",
-                (p["id"],),
-            )
-            row = await cur.fetchone()
-            rem = max(0, float(row[0]) - qty)
-            real = float(row[1]) + pnl
-            status = "CLOSED" if rem <= p["token_qty"] * 1e-9 else "OPEN"
-            await db.execute(
-                "UPDATE positions SET remaining_qty=?,realized_pnl=?,status=? WHERE id=?",
-                (rem, real, status, p["id"]),
-            )
-            await db.execute(
-                """INSERT INTO fills(
-                    position_id,side,price,qty,gross_usd,fee_usd,
-                    slippage_pct,reason,ts
-                ) VALUES(?,?,?,?,?,?,?,?,?)""",
-                (
-                    p["id"],
-                    "SELL",
-                    fill,
-                    qty,
-                    qty * fill,
-                    fee,
-                    slip,
-                    reason,
-                    now,
-                ),
-            )
-            await db.commit()
-        await set_cash(ca + proceeds)
-        print(f'[EXIT:{reason}] {p["symbol"]} pnl=${pnl:.2f}')
+            cur=await db.execute("SELECT remaining_qty,realized_pnl FROM positions WHERE id=?",(p["id"],)); row=await cur.fetchone()
+            rem=max(0,float(row[0])-qty); real=float(row[1])+pnl; status="CLOSED" if rem<=p["token_qty"]*1e-9 else "OPEN"
+            await db.execute("UPDATE positions SET remaining_qty=?,realized_pnl=?,status=? WHERE id=?",(rem,real,status,p["id"]))
+            await db.execute("INSERT INTO fills(position_id,side,price,qty,gross_usd,fee_usd,slippage_pct,reason,ts) VALUES(?,?,?,?,?,?,?,?,?)",(p["id"],"SELL",fill,qty,qty*fill,fee,slip,reason,now)); await db.commit()
+        await set_cash(ca+proceeds); print(f'[EXIT:{reason}] {p["symbol"]} pnl=${pnl:.2f}')
 
-app = FastAPI(title="SFalcon Paper Trader", version=VERSION)
-sources = Sources()
-wallet_monitor = WalletMonitor(sources.client, DB_PATH)
-engine = Engine(sources, wallet_monitor)
+app=FastAPI(title="SFalcon Paper Trader",version=VERSION)
+sources=Sources()
+wallet_monitor=WalletMonitor(sources.client,DB_PATH)
+lore_monitor=LoreMonitor(sources.client,DB_PATH,JUPITER_API_KEY)
+social_monitor=SocialMonitor(sources.client,DB_PATH,wallet_monitor)
+exchange_monitor=ExchangeMonitor(sources.client,DB_PATH)
+research_gate=ResearchGate(DB_PATH)
+engine=Engine(sources,wallet_monitor,lore_monitor,social_monitor,exchange_monitor,research_gate)
 
 @app.get("/")
 async def root():
-    return {
-        "name": "SFalcon",
-        "version": VERSION,
-        "mode": "PAPER_ONLY",
-        "health": "/health",
-        "status": "/status",
-        "wallets": "/wallet-status",
-        "wallet_events": "/wallet-events",
-    }
+    return {"name":"SFalcon","version":VERSION,"mode":"PAPER_ONLY","health":"/health","status":"/status","candidates":"/candidates","research":"/research","volatile":"/volatile","prebond":"/prebond","postbond":"/postbond","wallets":"/wallet-status","wallet_events":"/wallet-events","social_status":"/social-status","social_events":"/social-events","exchange_events":"/exchange-events","lore_status":"/lore-status"}
 
 @app.get("/health")
-async def health():
-    return {"ok": True, "name": "SFalcon", "version": VERSION, "mode": "PAPER_ONLY"}
+async def health(): return {"ok":True,"name":"SFalcon","version":VERSION,"mode":"PAPER_ONLY"}
 
 @app.get("/status")
 async def status():
-    ca = await cash()
-    eq = await engine.equity()
-    ps = await engine.positions()
-    ws = await wallet_monitor.status()
+    ca=await cash(); eq=await engine.equity(); ps=await engine.positions(); ws=await wallet_monitor.status(); ls=await lore_monitor.status(); ss=await social_monitor.status(); es=await exchange_monitor.status()
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT COALESCE(SUM(realized_pnl),0) FROM positions")
-        real = float((await cur.fetchone())[0])
-        cur = await db.execute("SELECT COUNT(*) FROM positions")
-        trade_count = int((await cur.fetchone())[0])
-    return {
-        "name": "SFalcon",
-        "version": VERSION,
-        "mode": "PAPER_ONLY",
-        "starting_equity": STARTING_EQUITY,
-        "cash": ca,
-        "equity": eq,
-        "total_return_pct": (eq / STARTING_EQUITY - 1) * 100,
-        "realized_pnl": real,
-        "positions_ever_opened": trade_count,
-        "open_positions": len(ps),
-        "scan_interval_seconds": SCAN_INTERVAL,
-        "position_check_seconds": POSITION_CHECK,
-        "wallet_check_seconds": WALLET_CHECK,
-        "jupiter_enabled": bool(JUPITER_API_KEY),
-        "source_health": sources.health,
-        "wallet_monitor": ws,
-    }
+        cur=await db.execute("SELECT COALESCE(SUM(realized_pnl),0) FROM positions"); real=float((await cur.fetchone())[0])
+        cur=await db.execute("SELECT COUNT(*) FROM positions"); trade_count=int((await cur.fetchone())[0])
+    return {"name":"SFalcon","version":VERSION,"mode":"PAPER_ONLY","starting_equity":STARTING_EQUITY,"cash":ca,"equity":eq,"total_return_pct":(eq/STARTING_EQUITY-1)*100,"realized_pnl":real,"positions_ever_opened":trade_count,"open_positions":len(ps),"scan_interval_seconds":SCAN_INTERVAL,"position_check_seconds":POSITION_CHECK,"wallet_check_seconds":WALLET_CHECK,"lore_check_seconds":LORE_CHECK,"social_check_seconds":SOCIAL_CHECK,"exchange_check_seconds":EXCHANGE_CHECK,"jupiter_enabled":bool(JUPITER_API_KEY),"paid_x_api":False,"source_health":sources.health,"wallet_monitor":ws,"bond_lore_monitor":ls,"social_monitor":ss,"exchange_monitor":es}
 
 @app.get("/positions")
-async def positions():
-    return await engine.positions(open_only=False)
+async def positions(): return await engine.positions(open_only=False)
 
 @app.get("/trades")
 async def trades():
     async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM fills ORDER BY id DESC LIMIT 500")
-        return [dict(r) for r in await cur.fetchall()]
+        db.row_factory=aiosqlite.Row; cur=await db.execute("SELECT * FROM fills ORDER BY id DESC LIMIT 500"); return [dict(r) for r in await cur.fetchall()]
 
 @app.get("/candidates")
 async def candidates():
     async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM candidates ORDER BY score DESC LIMIT 50"
-        )
-        rows = []
+        db.row_factory=aiosqlite.Row; cur=await db.execute("SELECT * FROM candidates ORDER BY score DESC LIMIT 75"); rows=[]
         for r in await cur.fetchall():
-            d = dict(r)
-            try:
-                d["breakdown"] = json.loads(d["breakdown"])
-            except Exception:
-                pass
+            d=dict(r)
+            try:d["breakdown"]=json.loads(d["breakdown"])
+            except Exception:pass
             rows.append(d)
         return rows
 
 @app.get("/wallet-status")
-async def wallet_status():
-    return await wallet_monitor.status()
-
+async def wallet_status(): return await wallet_monitor.status()
 @app.get("/wallet-events")
-async def wallet_events():
-    return await wallet_monitor.recent_events(limit=150)
+async def wallet_events(): return await wallet_monitor.recent_events(limit=150)
+@app.get("/lore-status")
+async def lore_status(): return await lore_monitor.status()
+@app.get("/prebond")
+async def prebond(): return await lore_monitor.top_prebond(limit=75)
+@app.get("/postbond")
+async def postbond(): return await lore_monitor.top_postbond(limit=75)
+@app.get("/social-status")
+async def social_status(): return await social_monitor.status()
+@app.get("/social-events")
+async def social_events(): return await social_monitor.recent_posts(limit=150)
+@app.get("/exchange-events")
+async def exchange_events(): return await exchange_monitor.recent_events(limit=100)
+@app.get("/research")
+async def research(): return await research_gate.recent(limit=100)
+@app.get("/volatile")
+async def volatile(): return await research_gate.volatile(limit=100)
 
-async def repeat(label, seconds, fn):
+async def repeat(label,seconds,fn):
     while True:
-        try:
-            await fn()
-        except Exception as e:
-            print(f"[{label}] error: {e}")
+        try: await fn()
+        except Exception as e: print(f"[{label}] error: {e}")
         await asyncio.sleep(seconds)
 
 async def main():
-    await init_db()
-    await wallet_monitor.init_db()
-    print("SFalcon v3 started — PAPER ONLY")
-    print(
-        f"Bankroll: ${STARTING_EQUITY:.2f} | discovery {SCAN_INTERVAL:g}s | "
-        f"positions {POSITION_CHECK:g}s | wallet batch {WALLET_CHECK:g}s | "
-        f"tracked wallets {len(wallet_monitor.wallets)}"
-    )
-    config = uvicorn.Config(app, host=HOST, port=PORT, log_level="info")
-    server = uvicorn.Server(config)
+    await init_db(); await wallet_monitor.init_db(); await lore_monitor.init_db(); await social_monitor.init_db(); await exchange_monitor.init_db(); await research_gate.init_db()
+    print("SFalcon v4 started — PAPER ONLY")
+    print(f"Bankroll: ${STARTING_EQUITY:.2f} | discovery {SCAN_INTERVAL:g}s | positions {POSITION_CHECK:g}s | wallet {WALLET_CHECK:g}s | bond lore {LORE_CHECK:g}s | social {SOCIAL_CHECK:g}s | tracked wallets {len(wallet_monitor.wallets)} | CT accounts {len(social_monitor.accounts)}")
+    config=uvicorn.Config(app,host=HOST,port=PORT,log_level="info"); server=uvicorn.Server(config)
     try:
         await asyncio.gather(
-            repeat("DISCOVERY", SCAN_INTERVAL, engine.discover_once),
-            repeat("POSITIONS", POSITION_CHECK, engine.manage_once),
-            repeat("WALLETS", WALLET_CHECK, wallet_monitor.scan_once),
+            repeat("DISCOVERY",SCAN_INTERVAL,engine.discover_once),
+            repeat("POSITIONS",POSITION_CHECK,engine.manage_once),
+            repeat("WALLETS",WALLET_CHECK,wallet_monitor.scan_once),
+            repeat("BOND_LORE",LORE_CHECK,lore_monitor.scan_once),
+            repeat("SOCIAL",SOCIAL_CHECK,social_monitor.scan_once),
+            repeat("EXCHANGE",EXCHANGE_CHECK,exchange_monitor.scan_once),
+            lore_monitor.stream_new_tokens(),
             server.serve(),
         )
-    finally:
-        await sources.close()
+    finally: await sources.close()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__=="__main__": asyncio.run(main())

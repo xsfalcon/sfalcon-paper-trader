@@ -89,6 +89,8 @@ class WalletMonitor:
             groups = set(w.get("groups") or [])
             if "THE ONE" in groups:
                 repeats = 4
+            elif "Research_SmartMoney" in groups:
+                repeats = 3
             elif "Peacock" in groups:
                 repeats = 2
             for _ in range(repeats):
@@ -317,6 +319,8 @@ class WalletMonitor:
             "sell_weight": round(sell_w, 2),
             "accumulators": [r["wallet_name"] for r in accum[:8]],
             "distributors": [r["wallet_name"] for r in dist[:8]],
+            "accumulator_addresses": [r["wallet_address"] for r in accum[:16]],
+            "distributor_addresses": [r["wallet_address"] for r in dist[:16]],
             "window_minutes": minutes,
         }
 

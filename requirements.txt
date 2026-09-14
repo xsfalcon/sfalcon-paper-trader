@@ -3,3 +3,4 @@ aiosqlite==0.20.0
 python-dotenv==1.0.1
 fastapi==0.115.8
 uvicorn==0.34.0
+websockets==15.0.1

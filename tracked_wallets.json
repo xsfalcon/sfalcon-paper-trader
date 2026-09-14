@@ -1366,11 +1366,12 @@
   },
   {
     "address": "CAPn1yH4oSywsxGU456jfgTrSSUidf9jgeAnHceNUJdw",
-    "name": "cap dev",
+    "name": "Cap",
     "groups": [
-      "Main"
+      "Main",
+      "Research_SmartMoney"
     ],
-    "weight": 1.0
+    "weight": 1.25
   },
   {
     "address": "3mPypxb7ViYEdLv4siFmESvY5w5ZKknwgmB4TPcZ77qe",
@@ -1424,9 +1425,10 @@
     "address": "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",
     "name": "Cented",
     "groups": [
-      "Main"
+      "Main",
+      "Research_SmartMoney"
     ],
-    "weight": 1.0
+    "weight": 1.3
   },
   {
     "address": "XDgpjPubjN5soLAFmAMjD2uVR1XZxUKgNpMU6Eo97H7",
@@ -1472,9 +1474,10 @@
     "address": "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
     "name": "Clukz",
     "groups": [
-      "Main"
+      "Main",
+      "Research_SmartMoney"
     ],
-    "weight": 1.0
+    "weight": 1.2
   },
   {
     "address": "HaZtFxgw99iM97LxmwFuDW6k4MP1XwsWTGoy7GUoSELj",
@@ -1592,9 +1595,10 @@
     "address": "4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9",
     "name": "Decu",
     "groups": [
-      "Main"
+      "Main",
+      "Research_SmartMoney"
     ],
-    "weight": 1.0
+    "weight": 1.45
   },
   {
     "address": "mW4PZB45isHmnjGkLpJvjKBzVS5NXzTJ8UDyug4gTsM",
@@ -2088,9 +2092,10 @@
     "address": "4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk",
     "name": "Jijo COPYTRADE",
     "groups": [
-      "Main"
+      "Main",
+      "Research_SmartMoney"
     ],
-    "weight": 1.0
+    "weight": 1.25
   },
   {
     "address": "G21mvojWqD2vPnSpgecsTji2oqWa2ZZawRx42DropDzY",
@@ -2752,9 +2757,10 @@
     "address": "FAicXNV5FVqtfbpn4Zccs71XcfGeyxBSGbqLDyDJZjke",
     "name": "Radiance",
     "groups": [
-      "Main"
+      "Main",
+      "Research_SmartMoney"
     ],
-    "weight": 1.0
+    "weight": 1.25
   },
   {
     "address": "71PCu3E4JP5RDBoY6wJteqzxkKNXLyE1byg5BTAL9UtQ",
@@ -3158,11 +3164,12 @@
   },
   {
     "address": "Bi4rd5FH5bYEN8scZ7wevxNZyNmKHdaBcvewdPFxYdLt",
-    "name": "theo",
+    "name": "Theo",
     "groups": [
-      "Main"
+      "Main",
+      "Research_SmartMoney"
     ],
-    "weight": 1.0
+    "weight": 1.25
   },
   {
     "address": "mercyjp6vpa75nLGdz2jsTSp1qd9DiUQbMfT3i2QP8v",
@@ -3379,5 +3386,69 @@
       "Main"
     ],
     "weight": 1.0
+  },
+  {
+    "address": "2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f",
+    "name": "Cupsey",
+    "groups": [
+      "Research_SmartMoney"
+    ],
+    "weight": 1.15
+  },
+  {
+    "address": "B32QbbdDAyhvUQzjcaM5j6ZVKwjCxAwGH5Xgvb9SJqnC",
+    "name": "Kadenox",
+    "groups": [
+      "Research_SmartMoney"
+    ],
+    "weight": 1.35
+  },
+  {
+    "address": "ardinRsN1mNYVeoJWTBsWeYeXvuR9UUDGMsCDKpb6AT",
+    "name": "Trunoest",
+    "groups": [
+      "Research_SmartMoney"
+    ],
+    "weight": 1.5
+  },
+  {
+    "address": "6S8GezkxYUfZy9JPtYnanbcZTMB87Wjt1qx3c6ELajKC",
+    "name": "Nyhrox",
+    "groups": [
+      "Research_SmartMoney"
+    ],
+    "weight": 1.25
+  },
+  {
+    "address": "4sAUSQFdvWRBxR8UoLBYbw8CcXuwXWxnN8pXa4mtm5nU",
+    "name": "Scharo",
+    "groups": [
+      "Research_SmartMoney"
+    ],
+    "weight": 1.05
+  },
+  {
+    "address": "4UwK5AE6Djdf3MfwtPGE8pFYD47MhU9fiStDVmSHJVMB",
+    "name": "Cottage",
+    "groups": [
+      "Research_SmartMoney"
+    ],
+    "weight": 1.25
+  },
+  {
+    "address": "CEUA7zVoDRqRYoeHTP58UHU6TR8yvtVbeLrX1dppqoXJ",
+    "name": "Tdmilky",
+    "groups": [
+      "Research_SmartMoney"
+    ],
+    "weight": 1.25
+  },
+  {
+    "address": "BQVz7fQ1WsQmSTMY3umdPEPPTm1sdcBcX9sP7o6kPRmB",
+    "name": "Limfork",
+    "groups": [
+      "Research_SmartMoney"
+    ],
+    "weight": 1.4
   }
 ]
