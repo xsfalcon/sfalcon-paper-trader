@@ -1,0 +1,46 @@
+name: Project Vault - archive integrity verification
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '13 4 1 * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: project-vault-verify-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download and independently verify newest Vault source release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt | jq -r '[.[] | select(.tagName | startswith("vault-"))] | sort_by(.createdAt) | last | .tagName // empty')"
+          if [[ -z "$TAG" ]]; then
+            echo "::error::No Project Vault release found; archive and mirror cannot be considered operational."
+            exit 1
+          fi
+          DEST="$RUNNER_TEMP/project-vault-restore"
+          mkdir -p "$DEST"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-source.zip*' --dir "$DEST"
+          cd "$DEST"
+          shopt -s nullglob
+          ARCHIVES=(*-source.zip)
+          HASHES=(*-source.zip.sha256)
+          if [[ "${#ARCHIVES[@]}" -ne 1 || "${#HASHES[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one matching source ZIP and SHA-256 file."
+            exit 1
+          fi
+          sha256sum -c "${HASHES[0]}"
+          unzip -tq "${ARCHIVES[0]}"
+          mkdir -p extracted
+          unzip -q "${ARCHIVES[0]}" -d extracted
+          test -n "$(find extracted -type f -print -quit)" || { echo "::error::Archive contained no files"; exit 1; }
+          echo "Confirmed: release $TAG downloaded, SHA-256 matched, ZIP structure and extraction passed."
+          echo "This does NOT test source compilation, database recovery, external assets or independent Cloudflare R2 storage."
