@@ -1,0 +1,116 @@
+name: Project Vault - verified source archives
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: project-vault-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Inspect tracked files and prepare reproducible source ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re, subprocess, sys
+          files=subprocess.check_output(["git","ls-files","-z"]).decode("utf-8","replace").split("\0")
+          suspect=[]
+          for path in filter(None,files):
+              name=path.lower().rsplit("/",1)[-1]
+              if (name==".env" or (name.startswith(".env.") and not name.endswith((".example",".sample",".template"))) or name in ("id_rsa","id_ed25519","credentials.json","service-account.json","service_account.json") or name.endswith((".pem",".p12",".pfx",".key"))):
+                  suspect.append(path)
+          if suspect:
+              print("::error::Potentially sensitive tracked files. Review before publishing an archive.")
+              for p in suspect: print("Blocked filename:",p)
+              sys.exit(1)
+          print("Source archive preflight passed:",len(files)-1,"tracked paths checked.")
+          PY
+          mkdir -p "$RUNNER_TEMP/vault"
+          REPO="${GITHUB_REPOSITORY##*/}"
+          SHA_SHORT="${GITHUB_SHA:0:12}"
+          TAG="vault-${SHA_SHORT}"
+          ZIP="${REPO}-${TAG}-source.zip"
+          git archive --format=zip --prefix="${REPO}/" --output="$RUNNER_TEMP/vault/$ZIP" "$GITHUB_SHA"
+          (cd "$RUNNER_TEMP/vault" && sha256sum "$ZIP" > "$ZIP.sha256" && sha256sum -c "$ZIP.sha256")
+          printf 'REPO=%s\nTAG=%s\nZIP=%s\n' "$REPO" "$TAG" "$ZIP" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import json,os,hashlib,datetime
+          d=os.environ["RUNNER_TEMP"]+"/vault"
+          repo=os.environ["GITHUB_REPOSITORY"]
+          sha=os.environ["GITHUB_SHA"]
+          zip_name=repo.split("/")[-1]+"-vault-"+sha[:12]+"-source.zip"
+          data={
+            "schema":"project-vault/v1",
+            "repository":repo,
+            "commit":sha,
+            "source_archive":zip_name,
+            "sha256":hashlib.sha256(open(d+"/"+zip_name,"rb").read()).hexdigest(),
+            "created_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "scope":"Tracked Git source files only; no live database, external asset storage, or environment secrets.",
+            "production_deployed":False,
+            "r2_verified":False
+          }
+          with open(d+"/manifest.json","w",encoding="utf-8") as f: json.dump(data,f,indent=2)
+          PY
+
+      - name: Publish immutable GitHub release
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/vault"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            mkdir -p "$RUNNER_TEMP/vault-previous"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ZIP.sha256" --dir "$RUNNER_TEMP/vault-previous"
+            cmp "$ZIP.sha256" "$RUNNER_TEMP/vault-previous/$ZIP.sha256"
+            echo "Existing release checksum matches; immutable archive preserved."
+          else
+            gh release create "$TAG" "$ZIP" "$ZIP.sha256" manifest.json \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Project Vault - $TAG" \
+              --notes "Automatic source-only archival snapshot at commit $GITHUB_SHA. This ZIP does not include runtime secrets, live databases, or untracked cloud assets. Verify recovery separately." \
+              --latest=false
+          fi
+
+      - name: Mirror archive to private Cloudflare R2 when configured
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROJECT_VAULT_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROJECT_VAULT_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_BUCKET: ${{ vars.PROJECT_VAULT_R2_BUCKET }}
+          R2_ACCOUNT_ID: ${{ vars.PROJECT_VAULT_R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" || -z "$R2_BUCKET" || -z "$R2_ACCOUNT_ID" ]]; then
+            echo "::warning::Independent R2 backup NOT configured. GitHub release exists but must not be marked fully backed up."
+            exit 0
+          fi
+          command -v aws >/dev/null || { echo "::error::AWS CLI unavailable"; exit 1; }
+          cd "$RUNNER_TEMP/vault"
+          sha256sum -c "$ZIP.sha256"
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          CHECKSUM="$(sha256sum "$ZIP" | cut -d' ' -f1)"
+          KEY="source/${GITHUB_REPOSITORY}/${TAG}/${ZIP}"
+          aws --endpoint-url "$ENDPOINT" s3api put-object --bucket "$R2_BUCKET" --key "$KEY" --body "$ZIP" --metadata "sha256=$CHECKSUM" >/dev/null
+          REMOTE="$(aws --endpoint-url "$ENDPOINT" s3api head-object --bucket "$R2_BUCKET" --key "$KEY" --query 'Metadata.sha256' --output text)"
+          test "$REMOTE" = "$CHECKSUM" || { echo "::error::R2 object checksum metadata mismatch"; exit 1; }
+          echo "Private R2 object and matching checksum metadata verified (not a restore test)."
